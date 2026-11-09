@@ -78,3 +78,5 @@ Benchmarks separate same-thread queue mechanics from producer/writer ingestion b
 Version 0.1.0: bounded baseline and SPSC queue, asynchronous writer, CLI, explicit errors, concurrency tests, Google Benchmark workloads, and sanitizer CI. This initial release has no production reliability history. A lock-free MPSC queue, batching, durable spooling, rotation, and dynamic resizing are potential future work, not implemented features.
 
 Contributions follow [CONTRIBUTING.md](CONTRIBUTING.md). MIT [license](LICENSE).
+
+Local test evidence and unexecuted platform checks are listed in the [validation record](docs/validation.md).
