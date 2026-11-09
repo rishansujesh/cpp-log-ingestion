@@ -1,13 +1,17 @@
-#include <log_ingest/engine.hpp>
 #include <future>
 #include <iostream>
+#include <log_ingest/engine.hpp>
 #include <sstream>
 #include <vector>
 
-#define CHECK(expr) do { if (!(expr)) throw std::runtime_error("check failed: " #expr); } while (false)
+#define CHECK(expr)                                                                                \
+    do {                                                                                           \
+        if (!(expr))                                                                               \
+            throw std::runtime_error("check failed: " #expr);                                      \
+    } while (false)
 using namespace log_ingest;
 
-template<class Queue> void queue_contract() {
+template <class Queue> void queue_contract() {
     Queue queue(2);
     std::string a = "a", b = "b", c = "c", out;
     CHECK(queue.try_push(a) == PushResult::accepted);
@@ -24,13 +28,14 @@ template<class Queue> void queue_contract() {
     queue.close();
 }
 
-template<class Queue> void ordered_stress() {
+template <class Queue> void ordered_stress() {
     constexpr int count = 200000;
     int next = 0;
-    Engine<Queue> engine(8, [&](std::string_view record) {
-        CHECK(record == std::to_string(next++));
-    }, OverflowPolicy::block);
-    for (int i = 0; i < count; ++i) CHECK(engine.submit(std::to_string(i)) == SubmitResult::accepted);
+    Engine<Queue> engine(
+        8, [&](std::string_view record) { CHECK(record == std::to_string(next++)); },
+        OverflowPolicy::block);
+    for (int i = 0; i < count; ++i)
+        CHECK(engine.submit(std::to_string(i)) == SubmitResult::accepted);
     engine.close();
     CHECK(next == count);
     CHECK(engine.stats().accepted == count);
@@ -39,10 +44,14 @@ template<class Queue> void ordered_stress() {
     engine.close();
 }
 
-template<class Queue> void rejection_and_failure() {
+template <class Queue> void rejection_and_failure() {
     std::promise<void> entered, release;
     auto gate = release.get_future().share();
-    Engine<Queue> engine(2, [&](std::string_view) { entered.set_value(); gate.wait(); throw std::runtime_error("disk full"); });
+    Engine<Queue> engine(2, [&](std::string_view) {
+        entered.set_value();
+        gate.wait();
+        throw std::runtime_error("disk full");
+    });
     CHECK(engine.submit("first") == SubmitResult::accepted);
     entered.get_future().wait();
     CHECK(engine.submit("second") == SubmitResult::accepted);
@@ -51,7 +60,11 @@ template<class Queue> void rejection_and_failure() {
     CHECK(engine.submit(std::string(65537, 'x')) == SubmitResult::too_large);
     release.set_value();
     bool failed = false;
-    try { engine.close(); } catch (const std::runtime_error&) { failed = true; }
+    try {
+        engine.close();
+    } catch (const std::runtime_error &) {
+        failed = true;
+    }
     CHECK(failed);
     CHECK(engine.stats().written == 0);
     CHECK(engine.stats().accepted == 3);
@@ -59,14 +72,17 @@ template<class Queue> void rejection_and_failure() {
     CHECK(engine.submit("late") == SubmitResult::sink_failed);
 }
 
-template<class Queue> void blocked_producer_observes_failure() {
+template <class Queue> void blocked_producer_observes_failure() {
     std::promise<void> entered, release;
     auto gate = release.get_future().share();
-    Engine<Queue> engine(2, [&](std::string_view) {
-        entered.set_value();
-        gate.wait();
-        throw std::runtime_error("sink failure");
-    }, OverflowPolicy::block);
+    Engine<Queue> engine(
+        2,
+        [&](std::string_view) {
+            entered.set_value();
+            gate.wait();
+            throw std::runtime_error("sink failure");
+        },
+        OverflowPolicy::block);
     CHECK(engine.submit("first") == SubmitResult::accepted);
     entered.get_future().wait();
     CHECK(engine.submit("second") == SubmitResult::accepted);
@@ -80,27 +96,39 @@ template<class Queue> void blocked_producer_observes_failure() {
     releaser.join();
     CHECK(result == SubmitResult::sink_failed);
     bool failed = false;
-    try { engine.close(); } catch (const std::runtime_error&) { failed = true; }
+    try {
+        engine.close();
+    } catch (const std::runtime_error &) {
+        failed = true;
+    }
     CHECK(failed);
 }
 
 void multiple_producers() {
     constexpr int producers = 4, records = 10000;
     std::vector<int> next(producers);
-    Engine<LockedQueue> engine(16, [&](std::string_view record) {
-        const int id = record[0] - '0';
-        CHECK(std::stoi(std::string(record.substr(2))) == next.at(id)++);
-    }, OverflowPolicy::block);
+    Engine<LockedQueue> engine(
+        16,
+        [&](std::string_view record) {
+            const int id = record[0] - '0';
+            CHECK(std::stoi(std::string(record.substr(2))) == next.at(id)++);
+        },
+        OverflowPolicy::block);
     std::vector<std::thread> threads;
     std::atomic<bool> ok{true};
-    for (int id = 0; id < producers; ++id) threads.emplace_back([&, id] {
-        for (int i = 0; i < records; ++i)
-            if (engine.submit(std::to_string(id) + ":" + std::to_string(i)) != SubmitResult::accepted) ok = false;
-    });
-    for (auto& thread : threads) thread.join();
+    for (int id = 0; id < producers; ++id)
+        threads.emplace_back([&, id] {
+            for (int i = 0; i < records; ++i)
+                if (engine.submit(std::to_string(id) + ":" + std::to_string(i)) !=
+                    SubmitResult::accepted)
+                    ok = false;
+        });
+    for (auto &thread : threads)
+        thread.join();
     engine.close();
     CHECK(ok);
-    for (auto n : next) CHECK(n == records);
+    for (auto n : next)
+        CHECK(n == records);
 }
 
 void concurrent_locked_close() {
@@ -108,7 +136,8 @@ void concurrent_locked_close() {
     std::promise<void> started;
     auto producer = std::thread([&] {
         started.set_value();
-        while (engine.submit("x") == SubmitResult::accepted) {}
+        while (engine.submit("x") == SubmitResult::accepted) {
+        }
     });
     started.get_future().wait();
     engine.close();
@@ -118,24 +147,38 @@ void concurrent_locked_close() {
 
 int main() {
     try {
-        queue_contract<LockedQueue>(); queue_contract<SpscQueue>();
-        ordered_stress<LockedQueue>(); ordered_stress<SpscQueue>();
-        rejection_and_failure<LockedQueue>(); rejection_and_failure<SpscQueue>();
+        queue_contract<LockedQueue>();
+        queue_contract<SpscQueue>();
+        ordered_stress<LockedQueue>();
+        ordered_stress<SpscQueue>();
+        rejection_and_failure<LockedQueue>();
+        rejection_and_failure<SpscQueue>();
         blocked_producer_observes_failure<LockedQueue>();
         blocked_producer_observes_failure<SpscQueue>();
-        multiple_producers(); concurrent_locked_close();
+        multiple_producers();
+        concurrent_locked_close();
         for (auto capacity : {0, 1, 3}) {
             bool invalid = false;
-            try { SpscQueue queue(capacity); } catch (const std::invalid_argument&) { invalid = true; }
+            try {
+                SpscQueue queue(capacity);
+            } catch (const std::invalid_argument &) {
+                invalid = true;
+            }
             CHECK(invalid);
         }
         std::ostringstream output;
-        { Engine<SpscQueue> engine(2, line_sink(output), OverflowPolicy::block);
-          CHECK(engine.submit("hello") == SubmitResult::accepted); }
+        {
+            Engine<SpscQueue> engine(2, line_sink(output), OverflowPolicy::block);
+            CHECK(engine.submit("hello") == SubmitResult::accepted);
+        }
         CHECK(output.str() == "hello\n");
-        { Engine<SpscQueue> empty(2, [](std::string_view) {}); empty.close(); }
+        {
+            Engine<SpscQueue> empty(2, [](std::string_view) {});
+            empty.close();
+        }
         std::cout << "All queue and engine tests passed\n";
-    } catch (const std::exception& error) {
-        std::cerr << error.what() << '\n'; return 1;
+    } catch (const std::exception &error) {
+        std::cerr << error.what() << '\n';
+        return 1;
     }
 }
