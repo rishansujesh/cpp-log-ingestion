@@ -1,0 +1,35 @@
+name: CI
+on: [push, pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [g++, clang++]
+        sanitizer: ['', address, thread]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_CXX_COMPILER=${{ matrix.compiler }} -DCMAKE_BUILD_TYPE=Debug -DLOG_INGEST_SANITIZER=${{ matrix.sanitizer }}
+      - run: cmake --build build -j2
+      - run: ctest --test-dir build --output-on-failure
+      - name: CLI round trip
+        run: |
+          printf 'alpha\nbeta\n' > input.txt
+          ./build/log-ingest spsc output.txt < input.txt
+          cmp input.txt output.txt
+  benchmark-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y libbenchmark-dev
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DLOG_INGEST_BENCHMARKS=ON
+      - run: cmake --build build -j2
+      - run: ./build/queue-benchmark --benchmark_min_time=0.01s --benchmark_out=benchmark.json --benchmark_out_format=json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke-results
+          path: benchmark.json
